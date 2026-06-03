@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from layout.grid_position import estimate_grid_position
+
 
 @dataclass(frozen=True)
 class AppNameEntry:
@@ -19,6 +21,12 @@ class AppNameMatch:
     match_reason: str
     matched_alias: str
     frame: int | None = None
+    page: int | None = None
+    page_frame_count: int | None = None
+    bounding_box: dict[str, int] | None = None
+    home_position: dict[str, object] | None = None
+    frame_width: int | None = None
+    frame_height: int | None = None
 
     def as_dict(self) -> dict[str, object]:
         result: dict[str, object] = {
@@ -31,6 +39,18 @@ class AppNameMatch:
 
         if self.frame is not None:
             result["frame"] = self.frame
+        if self.page is not None:
+            result["page"] = self.page
+        if self.page_frame_count is not None:
+            result["pageFrameCount"] = self.page_frame_count
+        if self.bounding_box is not None:
+            result["boundingBox"] = self.bounding_box
+        if self.home_position is not None:
+            result["homePosition"] = self.home_position
+        if self.frame_width is not None:
+            result["frameWidth"] = self.frame_width
+        if self.frame_height is not None:
+            result["frameHeight"] = self.frame_height
 
         return result
 
@@ -73,6 +93,12 @@ def match_app_name(
     *,
     ocr_confidence: float = 1.0,
     frame: int | None = None,
+    page: int | None = None,
+    page_frame_count: int | None = None,
+    bounding_box: dict[str, int] | None = None,
+    home_position: dict[str, object] | None = None,
+    frame_width: int | None = None,
+    frame_height: int | None = None,
 ) -> AppNameMatch | None:
     normalized_raw = normalize_app_name(raw_text)
 
@@ -111,6 +137,12 @@ def match_app_name(
                 match_reason=match_reason,
                 matched_alias=alias,
                 frame=frame,
+                page=page,
+                page_frame_count=page_frame_count,
+                bounding_box=bounding_box,
+                home_position=home_position,
+                frame_width=frame_width,
+                frame_height=frame_height,
             )
 
             if best_match is None or current_match.confidence > best_match.confidence:
@@ -130,7 +162,28 @@ def match_app_names(raw_items: Iterable[dict[str, Any]], dictionary: Iterable[Ap
 
         confidence = _read_float(item.get("confidence"), default=1.0)
         frame = _read_int(item.get("frame"))
-        match = match_app_name(raw_text, entries, ocr_confidence=confidence, frame=frame)
+        page = _read_int(item.get("page"))
+        page_frame_count = _read_int(item.get("pageFrameCount"))
+        bounding_box = _read_bounding_box(item.get("boundingBox"))
+        frame_width = _read_int(item.get("frameWidth"))
+        frame_height = _read_int(item.get("frameHeight"))
+        home_position = estimate_grid_position(
+            bounding_box=bounding_box,
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
+        match = match_app_name(
+            raw_text,
+            entries,
+            ocr_confidence=confidence,
+            frame=frame,
+            page=page,
+            page_frame_count=page_frame_count,
+            bounding_box=bounding_box,
+            home_position=home_position,
+            frame_width=frame_width,
+            frame_height=frame_height,
+        )
 
         if match is None:
             continue
@@ -170,3 +223,17 @@ def _read_int(value: Any) -> int | None:
         return value
 
     return None
+
+
+def _read_bounding_box(value: Any) -> dict[str, int] | None:
+    if not isinstance(value, dict):
+        return None
+
+    result: dict[str, int] = {}
+    for key in ("x", "y", "width", "height"):
+        item = value.get(key)
+        if not isinstance(item, int):
+            return None
+        result[key] = item
+
+    return result

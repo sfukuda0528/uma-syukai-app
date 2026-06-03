@@ -1,4 +1,4 @@
-export type CandidateStatus = "pending" | "confirmed" | "edited" | "rejected" | "added";
+export type CandidateStatus = "pending" | "confirmed" | "edited" | "rejected" | "added" | "folder";
 
 export type AppCandidate = {
   id: string;
@@ -6,7 +6,23 @@ export type AppCandidate = {
   displayName: string;
   confidence: number;
   frame: number;
+  page?: number;
+  pageFrameCount?: number;
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  homePosition?: {
+    area: "mainGrid" | "dock" | "widgetArea" | "unknown";
+    row?: number;
+    column?: number;
+  };
+  frameWidth?: number;
+  frameHeight?: number;
   confirmed: boolean;
+  isFolder?: boolean;
   status?: CandidateStatus;
   matchReason?: string;
   matchedAlias?: string;

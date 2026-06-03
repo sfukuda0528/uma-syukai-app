@@ -8,6 +8,7 @@ import { createJobStore } from "./store";
 type CreateUploadJobOptions = {
   artifactsDir?: string;
   createId?: () => string;
+  deleteUploadAfterAnalysis?: boolean;
   trimEndSeconds?: number;
   trimStartSeconds?: number;
   uploadsDir?: string;
@@ -38,6 +39,7 @@ export async function createUploadJob(file: File, options: CreateUploadJobOption
     artifactsDir: options.artifactsDir
   }).create({
     id,
+    deleteUploadAfterAnalysis: options.deleteUploadAfterAnalysis,
     fileSize: file.size,
     mimeType: file.type,
     originalFileName: file.name,

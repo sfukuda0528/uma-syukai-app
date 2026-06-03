@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { storagePaths } from "../storage/paths";
 import type { GeneratedIcon } from "./icon-generator";
+import { createShortcutSetupChecklist } from "./setup-checklist";
 
 export type GeneratedIconArchive = {
   fileName: string;
@@ -55,7 +56,11 @@ export async function createStoredZipArchive(input: CreateStoredZipArchiveInput)
 
 function createSetupNotes(icons: GeneratedIcon[]) {
   const rows = icons.map((icon) => `- ${icon.displayName}: icons/${icon.fileName}`).join("\n");
-  return `Home Icon Studio export\n\nGenerated icons:\n${rows}\n\nUse these PNG files with your shortcuts or launcher setup.\n`;
+  return (
+    `Home Icon Studio export\n\nGenerated icons:\n${rows}\n\n` +
+    `${createShortcutSetupChecklist(icons)}\n\n` +
+    "Use these PNG files with Apple Shortcuts or your launcher setup.\n"
+  );
 }
 
 function createZip(entries: ZipEntry[]) {

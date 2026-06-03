@@ -56,6 +56,32 @@ class AppNameMatcherTests(unittest.TestCase):
         self.assertEqual(results[0].raw_text, "メール")
         self.assertEqual(results[0].frame, 2)
 
+    def test_match_app_names_preserves_review_location_metadata(self) -> None:
+        entries = load_app_name_dictionary(Path("data/app-name-dictionary.json"))
+
+        results = match_app_names(
+            [
+                {
+                    "rawText": "Mail",
+                    "confidence": 0.9,
+                    "frame": 8,
+                    "page": 3,
+                    "pageFrameCount": 4,
+                    "boundingBox": {"x": 12, "y": 250, "width": 80, "height": 16},
+                    "frameWidth": 720,
+                    "frameHeight": 1280,
+                }
+            ],
+            entries,
+        )
+
+        self.assertEqual(results[0].as_dict()["page"], 3)
+        self.assertEqual(results[0].as_dict()["pageFrameCount"], 4)
+        self.assertEqual(results[0].as_dict()["boundingBox"], {"x": 12, "y": 250, "width": 80, "height": 16})
+        self.assertEqual(results[0].as_dict()["homePosition"], {"area": "mainGrid", "row": 1, "column": 1})
+        self.assertEqual(results[0].as_dict()["frameWidth"], 720)
+        self.assertEqual(results[0].as_dict()["frameHeight"], 1280)
+
     def test_load_app_name_dictionary_rejects_entries_without_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             dictionary_path = Path(tmp_dir) / "dictionary.json"

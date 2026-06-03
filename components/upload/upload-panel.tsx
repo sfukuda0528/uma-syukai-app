@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Play, Scissors, Upload } from "lucide-react";
+import { BellOff, MonitorPause, Play, Scissors, ShieldCheck, Trash2, Upload } from "lucide-react";
 
 type UploadPanelProps = {
   errorMessage?: string;
@@ -9,6 +9,7 @@ type UploadPanelProps = {
   fileName?: string;
   isStarting: boolean;
   onFileChange: (file: File | null) => void;
+  onRetentionChange?: (deleteUploadAfterAnalysis: boolean) => void;
   onStart: () => void;
   onTrimChange?: (trim: { endSeconds?: number; startSeconds?: number }) => void;
 };
@@ -19,10 +20,12 @@ export function UploadPanel({
   fileName,
   isStarting,
   onFileChange,
+  onRetentionChange,
   onStart,
   onTrimChange
 }: UploadPanelProps) {
   const [duration, setDuration] = useState(0);
+  const [deleteUploadAfterAnalysis, setDeleteUploadAfterAnalysis] = useState(true);
   const [startSeconds, setStartSeconds] = useState(0);
   const [endSeconds, setEndSeconds] = useState(0);
   const videoUrl = useMemo(() => (file ? URL.createObjectURL(file) : undefined), [file]);
@@ -34,6 +37,10 @@ export function UploadPanel({
       }
     };
   }, [videoUrl]);
+
+  useEffect(() => {
+    onRetentionChange?.(deleteUploadAfterAnalysis);
+  }, [deleteUploadAfterAnalysis, onRetentionChange]);
 
   useEffect(() => {
     onTrimChange?.({
@@ -64,6 +71,47 @@ export function UploadPanel({
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-tomato text-white">
           <Upload className="h-5 w-5" aria-hidden="true" />
         </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 rounded-md border border-ink/10 bg-paper/70 p-3">
+        <div className="flex items-center gap-2 text-sm font-black">
+          <MonitorPause className="h-4 w-4 text-moss" aria-hidden="true" />
+          録画前チェック
+        </div>
+        <div className="grid gap-2 text-sm leading-6 text-ink/70">
+          <div className="flex gap-2">
+            <BellOff className="mt-1 h-4 w-4 shrink-0 text-tomato" aria-hidden="true" />
+            <span>通知・壁紙・ウィジェットなど、映したくないものを避けてから録画します。</span>
+          </div>
+          <div className="flex gap-2">
+            <MonitorPause className="mt-1 h-4 w-4 shrink-0 text-tomato" aria-hidden="true" />
+            <span>各ページで少し停止すると、アプリ名候補を拾いやすくなります。</span>
+          </div>
+          <div className="flex gap-2">
+            <Scissors className="mt-1 h-4 w-4 shrink-0 text-tomato" aria-hidden="true" />
+            <span>不要な前後の範囲は、アップロード前に下のプレビューでトリミングできます。</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 rounded-md border border-moss/20 bg-moss/5 p-3 text-sm leading-6 text-ink/72">
+        <div className="flex gap-2">
+          <ShieldCheck className="mt-1 h-4 w-4 shrink-0 text-moss" aria-hidden="true" />
+          <span>解析はこの端末のローカル処理として扱い、クラウド OCR はデフォルトで使いません。</span>
+        </div>
+        <div className="flex gap-2">
+          <Trash2 className="mt-1 h-4 w-4 shrink-0 text-moss" aria-hidden="true" />
+          <span>録画、解析結果、生成済みアイコンは、完了後にまとめて削除できます。</span>
+        </div>
+        <label className="mt-1 flex items-start gap-2 rounded-md border border-moss/15 bg-white px-3 py-2 font-bold">
+          <input
+            type="checkbox"
+            checked={deleteUploadAfterAnalysis}
+            onChange={(event) => setDeleteUploadAfterAnalysis(event.currentTarget.checked)}
+            className="mt-1 h-4 w-4 shrink-0 accent-moss"
+          />
+          <span>解析が完了したらアップロード録画だけ削除する</span>
+        </label>
       </div>
 
       <label className="mt-5 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-steel/45 bg-paper/65 px-5 text-center transition hover:border-tomato hover:bg-white sm:mt-6">

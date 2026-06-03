@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { Activity, Download, FileVideo, ListChecks, Sparkles, Trash2, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Activity, CheckSquare, Download, FileVideo, History, ListChecks, Sparkles, Trash2, Upload } from "lucide-react";
 import { StatusPanel } from "@/components/analysis/status-panel";
 import { ThemePicker } from "@/components/icon-studio/theme-picker";
 import { CandidateReview } from "@/components/review/candidate-review";
 import { UploadPanel } from "@/components/upload/upload-panel";
 import type { IconTheme } from "@/lib/icons/icon-generator";
 import type { CandidateChange } from "@/lib/jobs/candidate-review";
-import type { AnalysisJob } from "@/lib/jobs/types";
+import type { AnalysisJob, AnalysisSettings } from "@/lib/jobs/types";
 
 const stats = [
   { label: "録画", icon: FileVideo },
@@ -25,6 +25,52 @@ const mobileTabs = [
 ] as const;
 
 type MobileTab = (typeof mobileTabs)[number]["id"];
+
+type JobHistoryPanelProps = {
+  activeJobId?: string;
+  jobs: AnalysisJob[];
+  onSelect: (job: AnalysisJob) => void;
+};
+
+function JobHistoryPanel({ activeJobId, jobs, onSelect }: JobHistoryPanelProps) {
+  if (jobs.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mb-4 rounded-md border border-ink/10 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-sm font-black">
+        <History className="h-4 w-4 text-moss" aria-hidden="true" />
+        ジョブ履歴
+      </div>
+      <div className="grid gap-2">
+        {jobs.slice(0, 5).map((historyJob) => (
+          <button
+            key={historyJob.id}
+            type="button"
+            onClick={() => onSelect(historyJob)}
+            className={`grid min-h-14 grid-cols-[1fr_auto] items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
+              historyJob.id === activeJobId
+                ? "border-moss/35 bg-moss/5"
+                : "border-ink/10 bg-paper/60 hover:border-moss/30"
+            }`}
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-bold">{historyJob.originalFileName}</span>
+              <span className="mt-0.5 block text-xs text-ink/55">
+                {formatDate(historyJob.updatedAt)} / 候補 {historyJob.candidates.length} / 生成{" "}
+                {historyJob.generatedIcons?.length ?? 0}
+              </span>
+            </span>
+            <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-steel">
+              {historyJob.status}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type OutputPanelProps = {
   icons: NonNullable<AnalysisJob["generatedIcons"]>;
@@ -94,6 +140,30 @@ function OutputPanel({ icons, isGenerating, jobId, onGenerate }: OutputPanelProp
           </a>
         ))}
       </div>
+      {icons.length > 0 && (
+        <div className="mt-4 rounded-md border border-moss/20 bg-moss/5 p-3">
+          <div className="flex items-center gap-2 text-sm font-black text-ink">
+            <CheckSquare className="h-4 w-4 text-moss" aria-hidden="true" />
+            ショートカット設定チェック
+          </div>
+          <div className="mt-3 grid gap-2">
+            {icons.map((icon) => (
+              <label
+                key={`setup-${icon.id}`}
+                className="flex min-h-12 items-start gap-3 rounded-md border border-ink/10 bg-white px-3 py-2 text-sm leading-6"
+              >
+                <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-moss" />
+                <span className="min-w-0">
+                  <span className="block font-bold">{icon.displayName}</span>
+                  <span className="block text-xs leading-5 text-ink/58">
+                    ショートカットで「App を開く」を作成し、ホーム画面追加時に {icon.fileName} を選択
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -102,11 +172,14 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<MobileTab>("upload");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [job, setJob] = useState<AnalysisJob | null>(null);
+  const [jobHistory, setJobHistory] = useState<AnalysisJob[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>();
   const [isStarting, setIsStarting] = useState(false);
   const [isSavingCandidates, setIsSavingCandidates] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState("paper-ink");
   const [customTheme, setCustomTheme] = useState<IconTheme>({
     id: "custom",
@@ -115,6 +188,37 @@ export default function Home() {
     palette: ["#f7f4ec", "#171717", "#d85c3a"]
   });
   const [trim, setTrim] = useState<{ endSeconds?: number; startSeconds?: number }>({});
+  const [deleteUploadAfterAnalysis, setDeleteUploadAfterAnalysis] = useState(true);
+  const [analysisSettings, setAnalysisSettings] = useState<AnalysisSettings>({
+    everySeconds: 2,
+    maxFrames: 12,
+    minConfidence: 0.55
+  });
+
+  useEffect(() => {
+    void loadJobHistory();
+  }, []);
+
+  async function loadJobHistory() {
+    try {
+      const response = await fetch("/api/jobs");
+      const payload = (await response.json()) as { jobs?: AnalysisJob[] };
+
+      if (response.ok && payload.jobs) {
+        setJobHistory(payload.jobs);
+      }
+    } catch {
+      // 履歴は補助導線なので、取得失敗時も主操作を止めない。
+    }
+  }
+
+  function selectHistoryJob(nextJob: AnalysisJob) {
+    setJob(nextJob);
+    setSelectedFile(null);
+    setErrorMessage(undefined);
+    setAnalysisSettings(nextJob.analysisSettings ?? { everySeconds: 2, maxFrames: 12, minConfidence: 0.55 });
+    setActiveTab(nextJob.status === "ready" ? "review" : "analysis");
+  }
 
   async function refreshJob(jobId: string) {
     const response = await fetch(`/api/jobs/${jobId}`);
@@ -125,6 +229,10 @@ export default function Home() {
     }
 
     setJob(payload.job);
+    setJobHistory((jobs) => [payload.job!, ...jobs.filter((historyJob) => historyJob.id !== payload.job!.id)]);
+    if (payload.job.analysisSettings) {
+      setAnalysisSettings(payload.job.analysisSettings);
+    }
 
     return payload.job;
   }
@@ -147,6 +255,7 @@ export default function Home() {
       if (trim.endSeconds !== undefined) {
         formData.append("trimEndSeconds", String(trim.endSeconds));
       }
+      formData.append("deleteUploadAfterAnalysis", String(deleteUploadAfterAnalysis));
 
       const response = await fetch("/api/jobs", {
         body: formData,
@@ -160,6 +269,8 @@ export default function Home() {
 
       const createdJob = payload.job;
       setJob(createdJob);
+      setJobHistory((jobs) => [createdJob, ...jobs.filter((historyJob) => historyJob.id !== createdJob.id)]);
+      setAnalysisSettings(createdJob.analysisSettings ?? analysisSettings);
       setActiveTab("analysis");
 
       window.setTimeout(() => {
@@ -196,10 +307,76 @@ export default function Home() {
       }
 
       setJob(payload.job);
+      setJobHistory((jobs) => [payload.job!, ...jobs.filter((historyJob) => historyJob.id !== payload.job!.id)]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "候補を更新できませんでした。");
     } finally {
       setIsSavingCandidates(false);
+    }
+  }
+
+  async function reanalyzeJob() {
+    if (!job) {
+      setErrorMessage("先に解析ジョブを開始してください。");
+      return;
+    }
+
+    setIsReanalyzing(true);
+    setErrorMessage(undefined);
+
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/reanalyze`, {
+        body: JSON.stringify({ settings: analysisSettings }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST"
+      });
+      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+
+      if (!response.ok || !payload.job) {
+        throw new Error(payload.error ?? "再解析を開始できませんでした。");
+      }
+
+      setJob(payload.job);
+      setJobHistory((jobs) => [payload.job!, ...jobs.filter((historyJob) => historyJob.id !== payload.job!.id)]);
+      if (payload.job.analysisSettings) {
+        setAnalysisSettings(payload.job.analysisSettings);
+      }
+      setActiveTab("analysis");
+
+      window.setTimeout(() => {
+        void refreshJob(payload.job!.id).catch((error) => {
+          setErrorMessage(error instanceof Error ? error.message : "ジョブ状態を取得できませんでした。");
+        });
+      }, 800);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "再解析を開始できませんでした。");
+    } finally {
+      setIsReanalyzing(false);
+    }
+  }
+
+  async function cancelJob() {
+    if (!job) {
+      return;
+    }
+
+    setIsCancelling(true);
+    setErrorMessage(undefined);
+
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
+      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+
+      if (!response.ok || !payload.job) {
+        throw new Error(payload.error ?? "解析をキャンセルできませんでした。");
+      }
+
+      setJob(payload.job);
+      setJobHistory((jobs) => [payload.job!, ...jobs.filter((historyJob) => historyJob.id !== payload.job!.id)]);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "解析をキャンセルできませんでした。");
+    } finally {
+      setIsCancelling(false);
     }
   }
 
@@ -229,6 +406,7 @@ export default function Home() {
       }
 
       setJob(payload.job);
+      setJobHistory((jobs) => [payload.job!, ...jobs.filter((historyJob) => historyJob.id !== payload.job!.id)]);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "アイコンを生成できませんでした。");
     } finally {
@@ -258,7 +436,9 @@ export default function Home() {
       }
 
       setJob(null);
+      setJobHistory((jobs) => jobs.filter((historyJob) => historyJob.id !== job.id));
       setSelectedFile(null);
+      setAnalysisSettings({ everySeconds: 2, maxFrames: 12, minConfidence: 0.55 });
       setActiveTab("upload");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "ジョブを削除できませんでした。");
@@ -271,7 +451,9 @@ export default function Home() {
     job ? "1" : "0",
     job ? job.status : "待機",
     String(
-      job?.candidates.filter((candidate) => candidate.confirmed && candidate.status !== "rejected")
+      job?.candidates.filter(
+        (candidate) => candidate.confirmed && candidate.status !== "rejected" && !candidate.isFolder
+      )
         .length ?? 0
     ),
     String(job?.generatedIcons?.length ?? 0)
@@ -322,21 +504,36 @@ export default function Home() {
           </div>
         )}
         {activeTab === "upload" && (
+          <JobHistoryPanel activeJobId={job?.id} jobs={jobHistory} onSelect={selectHistoryJob} />
+        )}
+        {activeTab === "upload" && (
           <UploadPanel
             errorMessage={errorMessage}
             file={selectedFile}
             fileName={selectedFile?.name}
             isStarting={isStarting}
             onFileChange={setSelectedFile}
+            onRetentionChange={setDeleteUploadAfterAnalysis}
             onStart={startJob}
             onTrimChange={setTrim}
           />
         )}
-        {activeTab === "analysis" && <StatusPanel job={job} />}
+        {activeTab === "analysis" && (
+          <StatusPanel
+            job={job}
+            isCancelling={isCancelling}
+            isReanalyzing={isReanalyzing}
+            settings={analysisSettings}
+            onCancel={cancelJob}
+            onReanalyze={reanalyzeJob}
+            onSettingsChange={setAnalysisSettings}
+          />
+        )}
         {activeTab === "review" && (
           <CandidateReview
             candidates={job?.candidates ?? []}
             isSaving={isSavingCandidates}
+            jobId={job?.id}
             onChange={updateCandidates}
           />
         )}
@@ -392,4 +589,13 @@ export default function Home() {
       </nav>
     </main>
   );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "2-digit"
+  }).format(new Date(value));
 }

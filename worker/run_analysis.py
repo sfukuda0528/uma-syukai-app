@@ -63,10 +63,13 @@ def run_analysis(job_id: str) -> None:
             trim_start_seconds = float(start_value)
         if isinstance(end_value, (int, float)):
             trim_end_seconds = float(end_value)
+    analysis_settings = _read_analysis_settings(job)
 
     frames = extract_representative_frames(
         video_path=upload_path,
         output_dir=frames_dir,
+        every_seconds=analysis_settings["every_seconds"],
+        max_frames=analysis_settings["max_frames"],
         trim_start_seconds=trim_start_seconds,
         trim_end_seconds=trim_end_seconds,
     )
@@ -79,7 +82,25 @@ def run_analysis(job_id: str) -> None:
     raw_texts = [_ocr_result_as_dict(result) for result in extract_text_from_frames(frames)]
     dictionary = load_app_name_dictionary(dictionary_path)
     matches = match_app_names(raw_texts, dictionary)
+    matches = [match for match in matches if match.confidence >= analysis_settings["min_confidence"]]
     update_job(job_id, status="ready", candidates=build_pending_candidates(matches))
+    delete_upload_after_analysis(job_id, job)
+
+
+def delete_upload_after_analysis(job_id: str, job: dict[str, object]) -> None:
+    if job.get("deleteUploadAfterAnalysis") is not True:
+        return
+
+    upload_value = job.get("uploadPath")
+    if not isinstance(upload_value, str) or not upload_value:
+        return
+
+    upload_path = Path.cwd() / upload_value
+    try:
+        upload_path.unlink(missing_ok=True)
+        update_job(job_id, uploadDeletedAt=now_iso())
+    except OSError as error:
+        update_job(job_id, uploadDeleteError=str(error))
 
 
 def _create_candidate_id(raw_text: str, used_ids: set[str]) -> str:
@@ -100,6 +121,31 @@ def _ocr_result_as_dict(result: Any) -> dict[str, object]:
         return result
 
     return result.as_dict()
+
+
+def _read_analysis_settings(job: dict[str, object]) -> dict[str, float | int]:
+    raw_settings = job.get("analysisSettings")
+    settings = raw_settings if isinstance(raw_settings, dict) else {}
+
+    return {
+        "every_seconds": _read_int_setting(settings.get("everySeconds"), default=2, minimum=1, maximum=10),
+        "max_frames": _read_int_setting(settings.get("maxFrames"), default=12, minimum=4, maximum=48),
+        "min_confidence": _read_float_setting(settings.get("minConfidence"), default=0.55, minimum=0.0, maximum=1.0),
+    }
+
+
+def _read_int_setting(value: object, *, default: int, minimum: int, maximum: int) -> int:
+    if not isinstance(value, (int, float)):
+        return default
+
+    return max(minimum, min(maximum, round(value)))
+
+
+def _read_float_setting(value: object, *, default: float, minimum: float, maximum: float) -> float:
+    if not isinstance(value, (int, float)):
+        return default
+
+    return round(max(minimum, min(maximum, float(value))), 2)
 
 
 def _slugify(value: str) -> str:

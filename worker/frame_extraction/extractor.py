@@ -1,5 +1,6 @@
 import subprocess
 from dataclasses import dataclass
+import hashlib
 import os
 from pathlib import Path
 from typing import Callable
@@ -13,12 +14,21 @@ class FrameExtractionError(RuntimeError):
 class ExtractedFrame:
     frame: int
     path: str
+    page: int | None = None
+    page_frame_count: int | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "frame": self.frame,
             "path": self.path,
         }
+
+        if self.page is not None:
+            result["page"] = self.page
+        if self.page_frame_count is not None:
+            result["pageFrameCount"] = self.page_frame_count
+
+        return result
 
 
 CommandRunner = Callable[[list[str]], None]
@@ -77,6 +87,8 @@ def extract_representative_frames(
     run_command: CommandRunner = run_ffmpeg,
 ) -> list[ExtractedFrame]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    for stale_frame in output_dir.glob("frame_*.jpg"):
+        stale_frame.unlink()
     output_pattern = output_dir / "frame_%03d.jpg"
 
     command = [
@@ -114,10 +126,59 @@ def extract_representative_frames(
     if not frame_paths:
         raise FrameExtractionError("代表フレームを抽出できませんでした。動画が短すぎるか、壊れている可能性があります。")
 
-    return [
-        ExtractedFrame(frame=index + 1, path=str(frame_path))
-        for index, frame_path in enumerate(frame_paths)
-    ]
+    return cluster_stable_pages(frame_paths)
+
+
+def cluster_stable_pages(frame_paths: list[Path]) -> list[ExtractedFrame]:
+    pages: list[ExtractedFrame] = []
+    current_hash: str | None = None
+    current_path: Path | None = None
+    current_frame = 0
+    current_count = 0
+
+    for index, frame_path in enumerate(frame_paths, start=1):
+        frame_hash = _hash_frame(frame_path)
+
+        if current_hash is None:
+            current_hash = frame_hash
+            current_path = frame_path
+            current_frame = index
+            current_count = 1
+            continue
+
+        if frame_hash == current_hash:
+            current_count += 1
+            continue
+
+        assert current_path is not None
+        pages.append(
+            ExtractedFrame(
+                frame=current_frame,
+                path=str(current_path),
+                page=len(pages) + 1,
+                page_frame_count=current_count,
+            )
+        )
+        current_hash = frame_hash
+        current_path = frame_path
+        current_frame = index
+        current_count = 1
+
+    if current_path is not None:
+        pages.append(
+            ExtractedFrame(
+                frame=current_frame,
+                path=str(current_path),
+                page=len(pages) + 1,
+                page_frame_count=current_count,
+            )
+        )
+
+    return pages
+
+
+def _hash_frame(frame_path: Path) -> str:
+    return hashlib.sha256(frame_path.read_bytes()).hexdigest()
 
 
 def _format_seconds(value: float) -> str:

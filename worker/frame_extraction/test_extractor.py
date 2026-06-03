@@ -17,8 +17,8 @@ class FrameExtractionTests(unittest.TestCase):
                 self.assertEqual(command[0], "ffmpeg")
                 self.assertIn(str(video_path), command)
                 output_dir.mkdir(parents=True, exist_ok=True)
-                (output_dir / "frame_001.jpg").write_bytes(b"frame")
-                (output_dir / "frame_002.jpg").write_bytes(b"frame")
+                (output_dir / "frame_001.jpg").write_bytes(b"frame-a")
+                (output_dir / "frame_002.jpg").write_bytes(b"frame-b")
 
             frames = extract_representative_frames(
                 video_path=video_path,
@@ -31,8 +31,18 @@ class FrameExtractionTests(unittest.TestCase):
             self.assertEqual(
                 [frame.as_dict() for frame in frames],
                 [
-                    {"frame": 1, "path": str(output_dir / "frame_001.jpg")},
-                    {"frame": 2, "path": str(output_dir / "frame_002.jpg")},
+                    {
+                        "frame": 1,
+                        "path": str(output_dir / "frame_001.jpg"),
+                        "page": 1,
+                        "pageFrameCount": 1,
+                    },
+                    {
+                        "frame": 2,
+                        "path": str(output_dir / "frame_002.jpg"),
+                        "page": 2,
+                        "pageFrameCount": 1,
+                    },
                 ],
             )
 
@@ -61,6 +71,64 @@ class FrameExtractionTests(unittest.TestCase):
             self.assertIn("3.5", captured_command)
             self.assertIn("-to", captured_command)
             self.assertIn("12.25", captured_command)
+
+    def test_extract_representative_frames_clusters_stable_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            video_path = tmp_path / "recording.mp4"
+            output_dir = tmp_path / "frames"
+            video_path.write_bytes(b"fake video")
+
+            def fake_run(_command: list[str]) -> None:
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "frame_001.jpg").write_bytes(b"page-a")
+                (output_dir / "frame_002.jpg").write_bytes(b"page-a")
+                (output_dir / "frame_003.jpg").write_bytes(b"page-b")
+
+            frames = extract_representative_frames(
+                video_path=video_path,
+                output_dir=output_dir,
+                run_command=fake_run,
+            )
+
+            self.assertEqual(
+                [frame.as_dict() for frame in frames],
+                [
+                    {
+                        "frame": 1,
+                        "path": str(output_dir / "frame_001.jpg"),
+                        "page": 1,
+                        "pageFrameCount": 2,
+                    },
+                    {
+                        "frame": 3,
+                        "path": str(output_dir / "frame_003.jpg"),
+                        "page": 2,
+                        "pageFrameCount": 1,
+                    },
+                ],
+            )
+
+    def test_extract_representative_frames_removes_stale_frames_before_extracting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            video_path = tmp_path / "recording.mp4"
+            output_dir = tmp_path / "frames"
+            video_path.write_bytes(b"fake video")
+            output_dir.mkdir()
+            (output_dir / "frame_001.jpg").write_bytes(b"old-frame")
+            (output_dir / "frame_099.jpg").write_bytes(b"stale-frame")
+
+            def fake_run(_command: list[str]) -> None:
+                (output_dir / "frame_001.jpg").write_bytes(b"new-frame")
+
+            frames = extract_representative_frames(
+                video_path=video_path,
+                output_dir=output_dir,
+                run_command=fake_run,
+            )
+
+            self.assertEqual([frame.frame for frame in frames], [1])
 
     def test_extract_representative_frames_fails_when_no_frames_are_written(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

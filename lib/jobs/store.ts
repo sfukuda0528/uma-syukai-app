@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { storagePaths } from "../storage/paths";
 import type { AnalysisJob } from "./types";
@@ -10,6 +10,7 @@ type CreateJobInput = {
   originalFileName: string;
   fileSize: number;
   mimeType: string;
+  deleteUploadAfterAnalysis?: boolean;
   trim?: AnalysisJob["trim"];
 };
 
@@ -46,6 +47,9 @@ export function createJobStore(options: JobStoreOptions = {}) {
         createdAt: now,
         updatedAt: now,
         candidates: [],
+        ...(input.deleteUploadAfterAnalysis !== undefined
+          ? { deleteUploadAfterAnalysis: input.deleteUploadAfterAnalysis }
+          : {}),
         ...(input.trim ? { trim: input.trim } : {})
       };
 
@@ -61,6 +65,34 @@ export function createJobStore(options: JobStoreOptions = {}) {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
           return null;
+        }
+
+        throw error;
+      }
+    },
+
+    async list() {
+      try {
+        const entries = await readdir(jobsDir, { withFileTypes: true });
+        const jobs = await Promise.all(
+          entries
+            .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+            .map(async (entry) => {
+              try {
+                const content = await readFile(path.join(jobsDir, entry.name), "utf8");
+                return JSON.parse(content) as AnalysisJob;
+              } catch {
+                return null;
+              }
+            })
+        );
+
+        return jobs
+          .filter((job): job is AnalysisJob => job !== null)
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return [];
         }
 
         throw error;

@@ -64,6 +64,52 @@ describe("applyCandidateChanges", () => {
     expect(getConfirmedCandidates(reviewed).map((candidate) => candidate.id)).toEqual(["mail"]);
   });
 
+  it("excludes folder candidates from icon generation", () => {
+    const reviewed = applyCandidateChanges(candidates, [
+      { id: "mail", action: "confirm" },
+      { id: "calendar", action: "confirm" },
+      { id: "calendar", action: "mark-folder", isFolder: true }
+    ]);
+
+    expect(reviewed.find((candidate) => candidate.id === "calendar")).toMatchObject({
+      confirmed: false,
+      isFolder: true,
+      status: "folder"
+    });
+    expect(getConfirmedCandidates(reviewed).map((candidate) => candidate.id)).toEqual(["mail"]);
+  });
+
+  it("bulk confirms pending candidates except rejected and folder items", () => {
+    const reviewed = applyCandidateChanges(candidates, [
+      { id: "calendar", action: "mark-folder", isFolder: true },
+      { action: "add", displayName: "メモ" },
+      { action: "bulk-confirm" }
+    ]);
+
+    expect(reviewed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "mail", confirmed: true, status: "confirmed" }),
+        expect.objectContaining({ id: "calendar", confirmed: false, status: "folder" }),
+        expect.objectContaining({ displayName: "メモ", confirmed: true, status: "added" })
+      ])
+    );
+  });
+
+  it("bulk unconfirms reviewed candidates without restoring rejected or folder items", () => {
+    const reviewed = applyCandidateChanges(candidates, [
+      { id: "mail", action: "confirm" },
+      { id: "calendar", action: "reject" },
+      { action: "bulk-unconfirm" }
+    ]);
+
+    expect(reviewed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "mail", confirmed: false, status: "pending" }),
+        expect.objectContaining({ id: "calendar", confirmed: false, status: "rejected" })
+      ])
+    );
+  });
+
   it("rejects blank candidate names", () => {
     expect(() =>
       applyCandidateChanges(candidates, [{ id: "mail", action: "edit", displayName: " " }])

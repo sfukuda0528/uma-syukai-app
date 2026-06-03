@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,7 +72,60 @@ class RunAnalysisTests(unittest.TestCase):
                     '{"id":"job-1","status":"queued","uploadPath":"uploads/recording.mp4",'
                     '"uploadFileName":"recording.mp4","originalFileName":"recording.mp4",'
                     '"fileSize":5,"mimeType":"video/mp4","createdAt":"2026-06-03T00:00:00Z",'
-                    '"updatedAt":"2026-06-03T00:00:00Z","candidates":[]}'
+                    '"updatedAt":"2026-06-03T00:00:00Z","candidates":[],'
+                    '"analysisSettings":{"everySeconds":3,"maxFrames":24,"minConfidence":0.8}}'
+                ),
+                encoding="utf-8",
+            )
+            (root / "data").mkdir()
+            (root / "data" / "app-name-dictionary.json").write_text(
+                '[{"canonicalName":"メール","aliases":["Mail","メール"]},'
+                '{"canonicalName":"メモ","aliases":["Memo","メモ"]}]',
+                encoding="utf-8",
+            )
+            frame = ExtractedFrame(frame=1, path=str(root / "tmp" / "job-1" / "frames" / "frame_001.jpg"))
+            fake_extract_frames.return_value = [frame]
+            fake_extract_text.return_value = [
+                {"rawText": "Mail", "confidence": 0.9, "frame": 1},
+                {"rawText": "Memo", "confidence": 0.5, "frame": 1},
+            ]
+
+            with patch("worker.run_analysis.Path.cwd", return_value=root):
+                from worker.run_analysis import run_analysis
+
+                run_analysis("job-1")
+
+            job = job_path.read_text(encoding="utf-8")
+            fake_extract_frames.assert_called_once()
+            self.assertEqual(fake_extract_frames.call_args.kwargs["every_seconds"], 3)
+            self.assertEqual(fake_extract_frames.call_args.kwargs["max_frames"], 24)
+            self.assertIn('"status": "ready"', job)
+            self.assertIn('"displayName": "メール"', job)
+            self.assertNotIn('"displayName": "メモ"', job)
+            self.assertIn('"status": "pending"', job)
+
+    @patch("worker.run_analysis.extract_text_from_frames")
+    @patch("worker.run_analysis.extract_representative_frames")
+    def test_run_analysis_deletes_upload_after_success_when_requested(
+        self,
+        fake_extract_frames,
+        fake_extract_text,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            jobs_dir = root / "artifacts" / "jobs"
+            upload_dir = root / "uploads"
+            jobs_dir.mkdir(parents=True)
+            upload_dir.mkdir()
+            upload_path = upload_dir / "recording.mp4"
+            upload_path.write_bytes(b"video")
+            job_path = jobs_dir / "job-1.json"
+            job_path.write_text(
+                (
+                    '{"id":"job-1","status":"queued","uploadPath":"uploads/recording.mp4",'
+                    '"uploadFileName":"recording.mp4","originalFileName":"recording.mp4",'
+                    '"fileSize":5,"mimeType":"video/mp4","createdAt":"2026-06-03T00:00:00Z",'
+                    '"updatedAt":"2026-06-03T00:00:00Z","candidates":[],"deleteUploadAfterAnalysis":true}'
                 ),
                 encoding="utf-8",
             )
@@ -80,19 +134,19 @@ class RunAnalysisTests(unittest.TestCase):
                 '[{"canonicalName":"メール","aliases":["Mail","メール"]}]',
                 encoding="utf-8",
             )
-            frame = ExtractedFrame(frame=1, path=str(root / "tmp" / "job-1" / "frames" / "frame_001.jpg"))
-            fake_extract_frames.return_value = [frame]
-            fake_extract_text.return_value = [{"rawText": "Mail", "confidence": 0.8, "frame": 1}]
+            fake_extract_frames.return_value = [
+                ExtractedFrame(frame=1, path=str(root / "tmp" / "job-1" / "frames" / "frame_001.jpg"))
+            ]
+            fake_extract_text.return_value = [{"rawText": "Mail", "confidence": 0.9, "frame": 1}]
 
             with patch("worker.run_analysis.Path.cwd", return_value=root):
                 from worker.run_analysis import run_analysis
 
                 run_analysis("job-1")
 
-            job = job_path.read_text(encoding="utf-8")
-            self.assertIn('"status": "ready"', job)
-            self.assertIn('"displayName": "メール"', job)
-            self.assertIn('"status": "pending"', job)
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            self.assertFalse(upload_path.exists())
+            self.assertIn("uploadDeletedAt", job)
 
 
 if __name__ == "__main__":

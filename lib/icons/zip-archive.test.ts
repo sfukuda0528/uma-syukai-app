@@ -43,6 +43,9 @@ describe("createStoredZipArchive", () => {
     expect(bytes.subarray(0, 4).toString("ascii")).toBe("PK\u0003\u0004");
     expect(bytes.toString("utf8")).toContain("icons/mail.png");
     expect(bytes.toString("utf8")).toContain("README.txt");
+    expect(bytes.toString("utf8")).toContain("Shortcut setup checklist");
+    expect(bytes.toString("utf8")).toContain("[ ] Mail");
+    expect(bytes.toString("utf8")).toContain("Create a shortcut with the Open App action for Mail.");
   });
 
   it("requires generated icons before creating a zip", async () => {

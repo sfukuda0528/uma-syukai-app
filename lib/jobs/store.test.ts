@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -76,5 +76,36 @@ describe("createJobStore", () => {
     });
 
     await expect(store.get("missing")).resolves.toBeNull();
+  });
+
+  it("lists stored jobs newest first and skips invalid files", async () => {
+    const store = createJobStore({
+      artifactsDir: path.join(root, "artifacts")
+    });
+    await mkdir(path.join(root, "artifacts", "jobs"), { recursive: true });
+    await writeFile(path.join(root, "artifacts", "jobs", "broken.json"), "{", "utf8");
+    const older = await store.create({
+      id: "job_old",
+      originalFileName: "old.mp4",
+      uploadPath: path.join(root, "uploads", "job_old.mp4"),
+      uploadFileName: "job_old.mp4",
+      fileSize: 100,
+      mimeType: "video/mp4"
+    });
+    const newer = await store.create({
+      id: "job_new",
+      originalFileName: "new.mp4",
+      uploadPath: path.join(root, "uploads", "job_new.mp4"),
+      uploadFileName: "job_new.mp4",
+      fileSize: 200,
+      mimeType: "video/mp4"
+    });
+    await store.update(older.id, { updatedAt: "2026-06-03T00:00:00.000Z" });
+    await store.update(newer.id, { updatedAt: "2026-06-03T01:00:00.000Z" });
+
+    await expect(store.list()).resolves.toMatchObject([
+      { id: "job_new", originalFileName: "new.mp4" },
+      { id: "job_old", originalFileName: "old.mp4" }
+    ]);
   });
 });

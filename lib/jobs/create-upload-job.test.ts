@@ -57,6 +57,21 @@ describe("createUploadJob", () => {
     });
   });
 
+  it("stores whether the uploaded recording should be deleted after analysis", async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], "Home Screen.MP4", {
+      type: "video/mp4"
+    });
+
+    const job = await createUploadJob(file, {
+      artifactsDir: path.join(root, "artifacts"),
+      createId: () => "job_delete_upload",
+      deleteUploadAfterAnalysis: true,
+      uploadsDir: path.join(root, "uploads")
+    });
+
+    expect(job.deleteUploadAfterAnalysis).toBe(true);
+  });
+
   it("rejects trim ranges where the end is before the start", async () => {
     const file = new File([new Uint8Array([1, 2, 3])], "Home Screen.MP4", {
       type: "video/mp4"

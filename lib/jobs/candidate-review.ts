@@ -4,12 +4,37 @@ export type CandidateChange =
   | { action: "confirm"; id: string }
   | { action: "edit"; id: string; displayName: string }
   | { action: "reject"; id: string }
+  | { action: "mark-folder"; id: string; isFolder: boolean }
+  | { action: "bulk-confirm" }
+  | { action: "bulk-unconfirm" }
   | { action: "add"; displayName: string };
 
 export function applyCandidateChanges(candidates: AppCandidate[], changes: CandidateChange[]) {
   let next = candidates.map(normalizeCandidate);
 
   for (const change of changes) {
+    if (change.action === "bulk-confirm") {
+      next = next.map((candidate) => {
+        if (candidate.status === "rejected" || candidate.status === "added" || candidate.isFolder) {
+          return candidate;
+        }
+
+        return setReviewStatus(candidate, "confirmed");
+      });
+      continue;
+    }
+
+    if (change.action === "bulk-unconfirm") {
+      next = next.map((candidate) => {
+        if (candidate.status === "rejected" || candidate.isFolder || candidate.status === "added") {
+          return candidate;
+        }
+
+        return setReviewStatus(candidate, "pending");
+      });
+      continue;
+    }
+
     if (change.action === "add") {
       const displayName = cleanDisplayName(change.displayName);
       next = [
@@ -40,6 +65,15 @@ export function applyCandidateChanges(candidates: AppCandidate[], changes: Candi
         return setReviewStatus(candidate, "rejected");
       }
 
+      if (change.action === "mark-folder") {
+        return {
+          ...candidate,
+          confirmed: false,
+          isFolder: change.isFolder,
+          status: change.isFolder ? "folder" : "pending"
+        };
+      }
+
       return {
         ...candidate,
         displayName: cleanDisplayName(change.displayName),
@@ -53,7 +87,9 @@ export function applyCandidateChanges(candidates: AppCandidate[], changes: Candi
 }
 
 export function getConfirmedCandidates(candidates: AppCandidate[]) {
-  return candidates.filter((candidate) => candidate.confirmed && candidate.status !== "rejected");
+  return candidates.filter(
+    (candidate) => candidate.confirmed && candidate.status !== "rejected" && !candidate.isFolder
+  );
 }
 
 function normalizeCandidate(candidate: AppCandidate): AppCandidate {

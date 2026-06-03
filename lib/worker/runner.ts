@@ -19,5 +19,11 @@ export function startAnalysisWorker(jobId: string) {
     });
   });
 
+  if (child.pid) {
+    void jobStore.update(jobId, {
+      workerPid: child.pid
+    });
+  }
+
   child.unref();
 }
