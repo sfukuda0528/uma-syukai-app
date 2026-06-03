@@ -39,6 +39,11 @@ if (!python) {
 }
 
 const result = spawnSync(python, ["-m", "unittest", "discover", "worker"], {
+  env: {
+    ...process.env,
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1"
+  },
   stdio: "inherit",
   shell: false
 });

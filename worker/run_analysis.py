@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,13 @@ from typing import Any, Iterable
 from frame_extraction.extractor import FrameExtractionError, extract_representative_frames
 from matching.app_name_matcher import AppNameMatch, load_app_name_dictionary, match_app_names
 from ocr.extractor import OcrExtractionError, extract_text_from_frames
+
+
+def configure_text_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def now_iso() -> str:
@@ -165,6 +173,7 @@ def _slugify(value: str) -> str:
 
 
 def main() -> None:
+    configure_text_streams()
     parser = argparse.ArgumentParser(description="Run the Home Icon Studio analysis worker.")
     parser.add_argument("--job-id", required=True)
     args = parser.parse_args()

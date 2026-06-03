@@ -21,3 +21,11 @@ export function selectPythonExecutable(
 ) {
   return candidates.find((candidate) => canExecute(candidate)) ?? "python";
 }
+
+export function getPythonWorkerEnv(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    ...env,
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1"
+  };
+}

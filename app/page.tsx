@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, CheckSquare, Download, FileVideo, History, ListChecks, Sparkles, Trash2, Upload } from "lucide-react";
 import { StatusPanel } from "@/components/analysis/status-panel";
 import { ThemePicker } from "@/components/icon-studio/theme-picker";
 import { CandidateReview } from "@/components/review/candidate-review";
 import { UploadPanel } from "@/components/upload/upload-panel";
+import { readJsonResponse } from "@/lib/http/json-response";
 import type { IconTheme } from "@/lib/icons/icon-generator";
 import type { CandidateChange } from "@/lib/jobs/candidate-review";
+import { isAnalysisInProgress } from "@/lib/jobs/progress";
+import { getCandidateStatsCount, nextTabAfterJobRefresh, type MobileTabId } from "@/lib/jobs/ui-state";
 import type { AnalysisJob, AnalysisSettings } from "@/lib/jobs/types";
 
 const stats = [
@@ -24,7 +27,7 @@ const mobileTabs = [
   { id: "output", label: "生成", icon: Download }
 ] as const;
 
-type MobileTab = (typeof mobileTabs)[number]["id"];
+type MobileTab = MobileTabId;
 
 type JobHistoryPanelProps = {
   activeJobId?: string;
@@ -202,9 +205,9 @@ export default function Home() {
   async function loadJobHistory() {
     try {
       const response = await fetch("/api/jobs");
-      const payload = (await response.json()) as { jobs?: AnalysisJob[] };
+      const payload = await readJsonResponse<{ jobs?: AnalysisJob[] }>(response);
 
-      if (response.ok && payload.jobs) {
+      if (payload.jobs) {
         setJobHistory(payload.jobs);
       }
     } catch {
@@ -220,22 +223,37 @@ export default function Home() {
     setActiveTab(nextJob.status === "ready" ? "review" : "analysis");
   }
 
-  async function refreshJob(jobId: string) {
+  const refreshJob = useCallback(async (jobId: string) => {
     const response = await fetch(`/api/jobs/${jobId}`);
-    const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+    const payload = await readJsonResponse<{ job?: AnalysisJob; error?: string }>(response);
 
-    if (!response.ok || !payload.job) {
+    if (!payload.job) {
       throw new Error(payload.error ?? "ジョブ状態を取得できませんでした。");
     }
 
     setJob(payload.job);
     setJobHistory((jobs) => [payload.job!, ...jobs.filter((historyJob) => historyJob.id !== payload.job!.id)]);
+    setActiveTab((currentTab) => nextTabAfterJobRefresh(currentTab, payload.job!));
     if (payload.job.analysisSettings) {
       setAnalysisSettings(payload.job.analysisSettings);
     }
 
     return payload.job;
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!job || !isAnalysisInProgress(job.status)) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshJob(job.id).catch((error) => {
+        setErrorMessage(error instanceof Error ? error.message : "ジョブ状態を取得できませんでした。");
+      });
+    }, 1200);
+
+    return () => window.clearInterval(intervalId);
+  }, [job, refreshJob]);
 
   async function startJob() {
     if (!selectedFile) {
@@ -261,9 +279,9 @@ export default function Home() {
         body: formData,
         method: "POST"
       });
-      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      const payload = await readJsonResponse<{ job?: AnalysisJob; error?: string }>(response);
 
-      if (!response.ok || !payload.job) {
+      if (!payload.job) {
         throw new Error(payload.error ?? "アップロードに失敗しました。");
       }
 
@@ -300,9 +318,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         method: "PATCH"
       });
-      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      const payload = await readJsonResponse<{ job?: AnalysisJob; error?: string }>(response);
 
-      if (!response.ok || !payload.job) {
+      if (!payload.job) {
         throw new Error(payload.error ?? "候補を更新できませんでした。");
       }
 
@@ -330,9 +348,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         method: "POST"
       });
-      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      const payload = await readJsonResponse<{ job?: AnalysisJob; error?: string }>(response);
 
-      if (!response.ok || !payload.job) {
+      if (!payload.job) {
         throw new Error(payload.error ?? "再解析を開始できませんでした。");
       }
 
@@ -365,9 +383,9 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/jobs/${job.id}/cancel`, { method: "POST" });
-      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      const payload = await readJsonResponse<{ job?: AnalysisJob; error?: string }>(response);
 
-      if (!response.ok || !payload.job) {
+      if (!payload.job) {
         throw new Error(payload.error ?? "解析をキャンセルできませんでした。");
       }
 
@@ -399,9 +417,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         method: "POST"
       });
-      const payload = (await response.json()) as { job?: AnalysisJob; error?: string };
+      const payload = await readJsonResponse<{ job?: AnalysisJob; error?: string }>(response);
 
-      if (!response.ok || !payload.job) {
+      if (!payload.job) {
         throw new Error(payload.error ?? "アイコンを生成できませんでした。");
       }
 
@@ -429,11 +447,7 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
-      const payload = (await response.json()) as { error?: string };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "ジョブを削除できませんでした。");
-      }
+      await readJsonResponse<{ ok?: boolean; error?: string }>(response);
 
       setJob(null);
       setJobHistory((jobs) => jobs.filter((historyJob) => historyJob.id !== job.id));
@@ -450,12 +464,7 @@ export default function Home() {
   const statValues = [
     job ? "1" : "0",
     job ? job.status : "待機",
-    String(
-      job?.candidates.filter(
-        (candidate) => candidate.confirmed && candidate.status !== "rejected" && !candidate.isFolder
-      )
-        .length ?? 0
-    ),
+    String(getCandidateStatsCount(job)),
     String(job?.generatedIcons?.length ?? 0)
   ];
 

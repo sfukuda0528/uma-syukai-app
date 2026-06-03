@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getPythonCandidates, selectPythonExecutable } from "./python";
+import { getPythonCandidates, getPythonWorkerEnv, selectPythonExecutable } from "./python";
 
 describe("getPythonCandidates", () => {
   it("includes the local Python bin path before Windows app aliases", () => {
@@ -23,5 +23,18 @@ describe("selectPythonExecutable", () => {
 
   it("falls back to python when no candidate can be checked", () => {
     expect(selectPythonExecutable([], () => false)).toBe("python");
+  });
+});
+
+describe("getPythonWorkerEnv", () => {
+  it("forces UTF-8 output so Python progress characters do not fail on cp932 Windows", () => {
+    const env = getPythonWorkerEnv({
+      PATH: "C:\\Windows",
+      PYTHONIOENCODING: "cp932"
+    });
+
+    expect(env.PATH).toBe("C:\\Windows");
+    expect(env.PYTHONIOENCODING).toBe("utf-8");
+    expect(env.PYTHONUTF8).toBe("1");
   });
 });

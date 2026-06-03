@@ -6,10 +6,28 @@ from unittest.mock import patch
 
 from worker.frame_extraction.extractor import ExtractedFrame
 from worker.matching.app_name_matcher import AppNameMatch
-from worker.run_analysis import build_pending_candidates
+from worker.run_analysis import build_pending_candidates, configure_text_streams
+
+
+class FakeTextStream:
+    def __init__(self) -> None:
+        self.reconfigure_kwargs: dict[str, str] | None = None
+
+    def reconfigure(self, **kwargs: str) -> None:
+        self.reconfigure_kwargs = kwargs
 
 
 class RunAnalysisTests(unittest.TestCase):
+    def test_configure_text_streams_uses_utf8_with_replacement_errors(self) -> None:
+        fake_stdout = FakeTextStream()
+        fake_stderr = FakeTextStream()
+
+        with patch("worker.run_analysis.sys.stdout", fake_stdout), patch("worker.run_analysis.sys.stderr", fake_stderr):
+            configure_text_streams()
+
+        self.assertEqual(fake_stdout.reconfigure_kwargs, {"encoding": "utf-8", "errors": "replace"})
+        self.assertEqual(fake_stderr.reconfigure_kwargs, {"encoding": "utf-8", "errors": "replace"})
+
     def test_build_pending_candidates_serializes_matches_for_review(self) -> None:
         matches = [
             AppNameMatch(

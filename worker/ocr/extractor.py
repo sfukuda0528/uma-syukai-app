@@ -54,7 +54,7 @@ def create_easyocr_reader() -> OcrReader:
             "easyocr が見つかりません。worker/requirements.txt の依存関係をインストールしてください。"
         ) from error
 
-    return easyocr.Reader(["ja", "en"], gpu=False)
+    return easyocr.Reader(["ja", "en"], gpu=False, verbose=False)
 
 
 def extract_text_from_frames(frames: list[ExtractedFrame], *, reader: OcrReader | None = None) -> list[OcrText]:

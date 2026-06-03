@@ -1,4 +1,19 @@
-import { CircleDashed, Cpu, FolderOpen, OctagonX, RotateCcw, SlidersHorizontal } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock3,
+  Cpu,
+  FolderOpen,
+  LoaderCircle,
+  OctagonX,
+  RotateCcw,
+  SlidersHorizontal,
+  XCircle
+} from "lucide-react";
+import {
+  buildAnalysisProgressSteps,
+  isAnalysisInProgress,
+  type AnalysisProgressStepState
+} from "@/lib/jobs/progress";
 import type { AnalysisJob, AnalysisSettings, JobStatus } from "@/lib/jobs/types";
 
 type StatusPanelProps = {
@@ -20,29 +35,6 @@ const statusLabels: Record<JobStatus, string> = {
   running_ocr: "OCR 実行中"
 };
 
-function getStepState(job: AnalysisJob | null, step: "upload" | "frames" | "ocr") {
-  if (!job) {
-    return "未開始";
-  }
-
-  if (job.status === "failed") {
-    return "失敗";
-  }
-  if (job.status === "cancelled") {
-    return "キャンセル";
-  }
-
-  if (step === "upload") {
-    return "完了";
-  }
-
-  if (step === "frames") {
-    return ["extracting_frames", "running_ocr", "ready"].includes(job.status) ? "処理中/完了" : "待機";
-  }
-
-  return ["running_ocr", "ready"].includes(job.status) ? "処理中/完了" : "待機";
-}
-
 const defaultSettings: AnalysisSettings = {
   everySeconds: 2,
   maxFrames: 12,
@@ -58,11 +50,19 @@ export function StatusPanel({
   onReanalyze,
   onSettingsChange
 }: StatusPanelProps) {
-  const steps = [
-    { label: "アップロード保存", state: getStepState(job, "upload") },
-    { label: "代表フレーム抽出", state: getStepState(job, "frames") },
-    { label: "OCR 候補生成", state: getStepState(job, "ocr") }
-  ];
+  const steps = buildAnalysisProgressSteps(job);
+  const activeStep = steps.find((step) => step.state === "active");
+  const doneWeight = steps.reduce((total, step) => {
+    if (step.state === "done") {
+      return total + 1;
+    }
+    if (step.state === "active") {
+      return total + 0.5;
+    }
+    return total;
+  }, 0);
+  const progressPercent = Math.round((doneWeight / steps.length) * 100);
+  const isProcessing = job ? isAnalysisInProgress(job.status) || isReanalyzing : false;
   const canCancel = job ? ["queued", "extracting_frames", "running_ocr"].includes(job.status) : false;
   const canReanalyze = Boolean(job && !job.uploadDeletedAt);
 
@@ -73,17 +73,52 @@ export function StatusPanel({
           <h2 className="text-lg font-black">解析ステータス</h2>
           <p className="mt-1 text-sm text-ink/60">Next.js から Python ワーカーへ処理を渡します。</p>
         </div>
-        <Cpu className="h-5 w-5 text-steel" aria-hidden="true" />
+        {isProcessing ? (
+          <LoaderCircle className="h-5 w-5 animate-spin text-tomato" aria-hidden="true" />
+        ) : (
+          <Cpu className="h-5 w-5 text-steel" aria-hidden="true" />
+        )}
+      </div>
+
+      <div className="mt-5 rounded-md border border-ink/10 bg-paper/75 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-steel">
+              {isProcessing ? "Processing" : "Status"}
+            </p>
+            <p className="mt-1 truncate text-sm font-black">
+              {activeStep ? `${activeStep.label}中` : job ? statusLabels[job.status] : "待機中"}
+            </p>
+          </div>
+          <span className="shrink-0 text-lg font-black tabular-nums text-moss">{progressPercent}%</span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${
+              isProcessing ? "bg-tomato" : "bg-moss"
+            }`}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+        {activeStep && (
+          <p className="mt-2 text-xs font-bold text-ink/58">{activeStep.detail}</p>
+        )}
       </div>
 
       <div className="mt-5 grid gap-3">
         {steps.map((step) => (
-          <div key={step.label} className="flex min-h-14 items-center justify-between rounded-md bg-paper px-3 py-3">
-            <span className="inline-flex items-center gap-2 text-sm font-bold leading-tight">
-              <CircleDashed className="h-4 w-4 text-tomato" aria-hidden="true" />
-              {step.label}
+          <div
+            key={step.id}
+            className={`grid min-h-16 grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border px-3 py-3 ${stepClassName(
+              step.state
+            )}`}
+          >
+            <StepIcon state={step.state} />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold leading-tight">{step.label}</span>
+              <span className="mt-1 block truncate text-xs text-ink/55">{step.detail}</span>
             </span>
-            <span className="text-xs text-ink/55">{step.state}</span>
+            <span className="shrink-0 text-xs font-bold text-ink/55">{stepStateLabel(step.state)}</span>
           </div>
         ))}
       </div>
@@ -173,4 +208,48 @@ export function StatusPanel({
       </div>
     </div>
   );
+}
+
+function StepIcon({ state }: { state: AnalysisProgressStepState }) {
+  if (state === "done") {
+    return <CheckCircle2 className="h-5 w-5 text-moss" aria-hidden="true" />;
+  }
+  if (state === "active") {
+    return <LoaderCircle className="h-5 w-5 animate-spin text-tomato" aria-hidden="true" />;
+  }
+  if (state === "failed") {
+    return <XCircle className="h-5 w-5 text-tomato" aria-hidden="true" />;
+  }
+  if (state === "cancelled") {
+    return <OctagonX className="h-5 w-5 text-steel" aria-hidden="true" />;
+  }
+  return <Clock3 className="h-5 w-5 text-steel" aria-hidden="true" />;
+}
+
+function stepClassName(state: AnalysisProgressStepState) {
+  if (state === "done") {
+    return "border-moss/20 bg-moss/5";
+  }
+  if (state === "active") {
+    return "border-tomato/30 bg-tomato/10 shadow-sm";
+  }
+  if (state === "failed") {
+    return "border-tomato/25 bg-tomato/10";
+  }
+  if (state === "cancelled") {
+    return "border-steel/25 bg-steel/10";
+  }
+  return "border-ink/10 bg-paper";
+}
+
+function stepStateLabel(state: AnalysisProgressStepState) {
+  const labels: Record<AnalysisProgressStepState, string> = {
+    active: "処理中",
+    cancelled: "中止",
+    done: "完了",
+    failed: "失敗",
+    pending: "待機"
+  };
+
+  return labels[state];
 }

@@ -1,10 +1,13 @@
 import tempfile
 import unittest
 import struct
+import sys
+import types
 from pathlib import Path
+from unittest.mock import patch
 
 from worker.frame_extraction.extractor import ExtractedFrame
-from worker.ocr.extractor import OcrExtractionError, extract_text_from_frames
+from worker.ocr.extractor import OcrExtractionError, create_easyocr_reader, extract_text_from_frames
 
 
 class FakeReader:
@@ -18,6 +21,19 @@ class FakeReader:
 
 
 class OcrExtractorTests(unittest.TestCase):
+    def test_create_easyocr_reader_disables_verbose_progress_output(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        class FakeEasyOcrModule(types.SimpleNamespace):
+            def Reader(self, languages: list[str], **kwargs: object) -> object:
+                calls.append({"languages": languages, **kwargs})
+                return object()
+
+        with patch.dict(sys.modules, {"easyocr": FakeEasyOcrModule()}):
+            create_easyocr_reader()
+
+        self.assertEqual(calls, [{"languages": ["ja", "en"], "gpu": False, "verbose": False}])
+
     def test_extract_text_from_frames_adds_frame_dimensions_when_image_size_is_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             frame_path = Path(tmp_dir) / "frame_001.png"

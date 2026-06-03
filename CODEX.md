@@ -157,3 +157,8 @@ artifacts/
 - `README.md`
 - `docs/superpowers/specs/2026-06-02-web-docs-design.md`
 - `docs/superpowers/plans/2026-06-02-web-docs.md`
+
+## トラブルシューティング参照
+
+開発サーバー、PowerShell、in-app browser 連携で既知の失敗例がある場合は `docs/troubleshooting.md` を参照する。
+特にローカル検証では、ブラウザで開いているポートの `/api/jobs` が `Content-Type: application/json` を返すことを確認してから進める。
