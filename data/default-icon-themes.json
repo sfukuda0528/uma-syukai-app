@@ -1,0 +1,20 @@
+[
+  {
+    "id": "paper-ink",
+    "name": "Paper Ink",
+    "description": "紙色の背景に濃い文字を置く静かなテーマ",
+    "palette": ["#f7f4ec", "#171717", "#d85c3a"]
+  },
+  {
+    "id": "moss-steel",
+    "name": "Moss Steel",
+    "description": "落ち着いた緑と青灰で整理するテーマ",
+    "palette": ["#31513b", "#49636f", "#ffffff"]
+  },
+  {
+    "id": "tomato-night",
+    "name": "Tomato Night",
+    "description": "暗色に赤を効かせる視認性重視のテーマ",
+    "palette": ["#171717", "#d85c3a", "#f7f4ec"]
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "canonicalName": "メール",
+    "aliases": ["Mail", "メール"]
+  },
+  {
+    "canonicalName": "カレンダー",
+    "aliases": ["Calendar", "カレンダー"]
+  },
+  {
+    "canonicalName": "メモ",
+    "aliases": ["Memo", "メモ"]
+  }
+]

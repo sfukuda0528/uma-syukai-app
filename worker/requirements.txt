@@ -1,0 +1,2 @@
+Pillow>=10.4.0
+easyocr>=1.7.2
